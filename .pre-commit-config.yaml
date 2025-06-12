@@ -8,7 +8,7 @@ repos:
     rev: v4.3.0
     hooks:
       - id: trailing-whitespace
-        files: "erpnext_fms.*"
+        files: "frappe_s3_attachment.*"
         exclude: ".*json$|.*txt$|.*csv|.*md"
       - id: check-yaml
       - id: no-commit-to-branch
