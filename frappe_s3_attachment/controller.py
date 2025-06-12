@@ -294,9 +294,6 @@ def upload_existing_files_s3(name):
                 s3_upload.S3_CLIENT.meta.endpoint_url, s3_upload.BUCKET, key
             )
 
-        # Remove file from local.
-        os.remove(file_path)
-
         frappe.db.sql(
             """UPDATE `tabFile` SET file_url=%s, folder=%s,
             old_parent=%s, content_hash=%s WHERE name=%s""",
@@ -304,14 +301,16 @@ def upload_existing_files_s3(name):
         )
         if doc.attached_to_doctype and doc.attached_to_name and doc.attached_to_field:
             table = f"tab{doc.attached_to_doctype}"
-            field = frappe.db.escape(doc.attached_to_field)
 
             frappe.db.sql(
                 f"""
-                UPDATE `{table}` SET `{field}` = %s WHERE name = %s
+                UPDATE `{table}` SET `{doc.attached_to_field}` = %s WHERE name = %s
             """,
                 (file_url, doc.attached_to_name),
             )
+
+        # Remove file from local.
+        os.remove(file_path)
 
         frappe.db.commit()
 
