@@ -89,8 +89,7 @@ class S3Operations(object):
                     + "/"
                     + day
                     + "/"
-                    + parent_doctype
-                    + "/"
+                    + (parent_doctype + "/" if parent_doctype else "")
                     + key
                     + "_"
                     + file_name
@@ -103,8 +102,7 @@ class S3Operations(object):
                     + "/"
                     + day
                     + "/"
-                    + parent_doctype
-                    + "/"
+                    + (parent_doctype + "/" if parent_doctype else "")
                     + key
                     + "_"
                     + file_name
