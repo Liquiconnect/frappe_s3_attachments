@@ -32,6 +32,9 @@ doctype_list_js = {
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+override_doctype_class = {
+	"File": "frappe_s3_attachment.customization.file.file.CustomFile",
+}
 
 # Home Pages
 # ----------
