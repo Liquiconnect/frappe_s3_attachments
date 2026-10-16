@@ -122,34 +122,22 @@ class S3Operations(object):
         mime_type = magic.from_file(file_path, mime=True)
         key = self.key_generator(file_name, parent_doctype, parent_name)
         content_type = mime_type
+        # Every object is private. Public-read ACLs were dropped in October
+        # 2026 (VAPT finding: anonymous bucket listing and reads); files the
+        # user marks public are served to guests through generate_file instead.
         try:
-            if is_private:
-                self.S3_CLIENT.upload_file(
-                    file_path,
-                    self.BUCKET,
-                    key,
-                    ExtraArgs={
+            self.S3_CLIENT.upload_file(
+                file_path,
+                self.BUCKET,
+                key,
+                ExtraArgs={
+                    "ContentType": content_type,
+                    "Metadata": {
                         "ContentType": content_type,
-                        "Metadata": {
-                            "ContentType": content_type,
-                            "file_name": file_name,
-                        },
+                        "file_name": file_name,
                     },
-                )
-            else:
-                self.S3_CLIENT.upload_file(
-                    file_path,
-                    self.BUCKET,
-                    key,
-                    ExtraArgs={
-                        "ContentType": content_type,
-                        "ACL": "public-read",
-                        "Metadata": {
-                            "ContentType": content_type,
-                        },
-                    },
-                )
-
+                },
+            )
         except boto3.exceptions.S3UploadFailedError:
             frappe.throw(frappe._("File Upload Failed. Please try again."))
         return key
@@ -219,15 +207,10 @@ def file_upload_to_s3(doc, method):
             file_path, doc.file_name, doc.is_private, parent_doctype, parent_name
         )
 
-        if doc.is_private:
-            method = "frappe_s3_attachment.controller.generate_file"
-            file_url = """/api/method/{0}?key={1}&file_name={2}""".format(
-                method, key, doc.file_name
-            )
-        else:
-            file_url = "{}/{}/{}".format(
-                s3_upload.S3_CLIENT.meta.endpoint_url, s3_upload.BUCKET, key
-            )
+        method = "frappe_s3_attachment.controller.generate_file"
+        file_url = """/api/method/{0}?key={1}&file_name={2}""".format(
+            method, key, doc.file_name
+        )
         os.remove(file_path)
         frappe.db.sql(
             """UPDATE `tabFile` SET file_url=%s, folder=%s,
@@ -244,12 +227,17 @@ def file_upload_to_s3(doc, method):
         frappe.db.commit()
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def generate_file(key=None, file_name=None):
     """
     Function to stream file from s3.
+
+    Guests may fetch only files whose File record is public; everything else
+    needs a login, as before. The object itself is never public in S3.
     """
     if key:
+        if frappe.session.user == "Guest" and not is_public_key(key):
+            frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
         s3_upload = S3Operations()
         signed_url = s3_upload.get_url(key, file_name)
         frappe.local.response["type"] = "redirect"
@@ -257,6 +245,12 @@ def generate_file(key=None, file_name=None):
     else:
         frappe.local.response["body"] = "Key not found."
     return
+
+
+def is_public_key(key):
+    """True when any File record for this object is marked public."""
+    flags = frappe.get_all("File", filters={"content_hash": key}, pluck="is_private")
+    return bool(flags) and not all(flags)
 
 
 def upload_existing_files_s3(name):
@@ -284,13 +278,8 @@ def upload_existing_files_s3(name):
             file_path, doc.file_name, doc.is_private, parent_doctype, parent_name
         )
 
-        if doc.is_private:
-            method = "frappe_s3_attachment.controller.generate_file"
-            file_url = """/api/method/{0}?key={1}""".format(method, key)
-        else:
-            file_url = "{}/{}/{}".format(
-                s3_upload.S3_CLIENT.meta.endpoint_url, s3_upload.BUCKET, key
-            )
+        method = "frappe_s3_attachment.controller.generate_file"
+        file_url = """/api/method/{0}?key={1}""".format(method, key)
 
         frappe.db.sql(
             """UPDATE `tabFile` SET file_url=%s, folder=%s,
