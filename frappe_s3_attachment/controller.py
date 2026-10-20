@@ -13,6 +13,20 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 
 
+# Types the browser may display inline. Everything else is sent as a download,
+# so an uploaded file can never render or run script in the browser (VAPT APP-002).
+INLINE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "jfif", "gif", "pdf"}
+
+
+def content_disposition(file_name):
+    """Content-Disposition for a signed URL: inline for images and PDF, attachment otherwise."""
+    name = os.path.basename(file_name or "").strip() or "file"
+    extension = os.path.splitext(name)[1].lstrip(".").lower()
+    safe_name = re.sub(r'[\r\n"\\]', "_", name)
+    disposition = "inline" if extension in INLINE_EXTENSIONS else "attachment"
+    return '{0}; filename="{1}"'.format(disposition, safe_name)
+
+
 class S3Operations(object):
     def __init__(self):
         """
@@ -173,8 +187,7 @@ class S3Operations(object):
             "Bucket": self.BUCKET,
             "Key": key,
         }
-        if file_name:
-            params["ResponseContentDisposition"] = "filename={}".format(file_name)
+        params["ResponseContentDisposition"] = content_disposition(file_name or key)
 
         url = self.S3_CLIENT.generate_presigned_url(
             "get_object",
