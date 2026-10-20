@@ -240,6 +240,21 @@ def file_upload_to_s3(doc, method):
         frappe.db.commit()
 
 
+def download_allowed(key):
+    """Ask apps (hook `s3_file_access_check`) whether the user may fetch this object.
+
+    A hook returns False to refuse; anything else leaves the default behaviour.
+    A hook that raises is logged and ignored so downloads keep working.
+    """
+    for method in frappe.get_hooks("s3_file_access_check"):
+        try:
+            if frappe.get_attr(method)(key, frappe.session.user) is False:
+                return False
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "s3_file_access_check failed")
+    return True
+
+
 @frappe.whitelist(allow_guest=True)
 def generate_file(key=None, file_name=None):
     """
@@ -250,6 +265,8 @@ def generate_file(key=None, file_name=None):
     """
     if key:
         if frappe.session.user == "Guest" and not is_public_key(key):
+            frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
+        if not download_allowed(key):
             frappe.throw(frappe._("Not permitted"), frappe.PermissionError)
         s3_upload = S3Operations()
         signed_url = s3_upload.get_url(key, file_name)
